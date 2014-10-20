@@ -1,0 +1,9 @@
+[package]
+
+name = "naive-undraw"
+version = "0.0.1"
+authors = ["pnkfelix"]
+
+[dependencies.boxdraw-rs]
+
+git = "https://github.com/pnkfelix/boxdraw-rs"

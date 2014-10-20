@@ -103,3 +103,19 @@ fn check_simple() {
                           ",
                           &SimpleSearch).unwrap();
 }
+
+#[test]
+#[should_fail]
+fn too_naive_to_pass_this_yet() {
+    boxdraw::check_undraw(".............\n\
+                           ....+---+....\n\
+                           ....|bbb|....\n\
+                           ....|bb+--+..\n\
+                           ....|bb|cc|..\n\
+                           ....+--|cc|..\n\
+                           .......+--+..\n\
+                           .............\n\
+                          ",
+                          &SimpleSearch).unwrap();
+
+}

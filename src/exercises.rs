@@ -97,7 +97,7 @@ fn three_by_three() {
 //
 // Consider what a box with both width and height equal to 1 would
 // look like. What implications does this have? For example, what kind
-// of pictures can you make with *just* boxes width and height 1?
+// of pictures can you make with just boxes of *both* width and height 1?
 //
 // Try to solve the undraw problem even for such cases.
 //

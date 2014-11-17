@@ -87,7 +87,7 @@ fn three_by_three() {
 
 
 // EXERCISE 3: Up until now, we have assumed that all boxes are at
-// least width and height >= 2.  So for example `narrow_lines()` above
+// least width and height >= 2.  So for example `test::narrow_lines()`
 // shows boxes of width == 2, so narrow that they have no interior.
 //
 // BUT: The boxdraw-rs library supports boxes of width or height == 1

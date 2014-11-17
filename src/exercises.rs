@@ -5,6 +5,15 @@ use SimpleSearch;
 
 
 
+// NOTE: There is not a strict ordering of the exercises below, You
+// can try them in order [1,2,3,4,5], or you can jump around, i.e. try
+// exercise 4 first, then come back to exercises 1 or 2.  (The only
+// exception to the above note is that exercise 5 is a harder version
+// of exercise 4.)
+
+
+
+
 // EXERCISE 1: Can you make an undraw implementation that can handle
 // the case below?
 
@@ -30,7 +39,24 @@ fn three_by_three() {
 
 
 
-// EXERCISE 2: One might think that once you generate a working
+// EXERCISE 2: The code for naive-undraw was not written with very
+// much efficiency in mind. There are places where the code will
+// redundantly rescan the same areas to check that they are sound,
+// namely when dealing with `PartialMatch'es`.
+//
+// 2a.) Can you make benchmarks (via Rust's `#[bench]` form) to
+//      illustrate how relatively badly this can get (i.e. by
+//      comparing the running time for picture with a single small box
+//      to one with a single big box.
+//
+// 2b.) What sorts of improvements are possible to avoid such scans?
+//      Try to implement them; make sure to record how the benchmarks
+//      performed with and without your changes.
+
+
+
+
+// EXERCISE 3: One might think that once you generate a working
 // Script, there's no further way to improve upon it. However,
 // consider a case like this:
 //
@@ -86,7 +112,7 @@ fn three_by_three() {
 
 
 
-// EXERCISE 3: Up until now, we have assumed that all boxes are at
+// EXERCISE 4: Up until now, we have assumed that all boxes are at
 // least width and height >= 2.  So for example `test::narrow_lines()`
 // shows boxes of width == 2, so narrow that they have no interior.
 //
@@ -110,7 +136,7 @@ fn three_by_three() {
 
 
 
-// EXERCISE 4: Like exercise 2 above: Again, solve the generalized
+// EXERCISE 5: Like exercise 3 above: Again, solve the generalized
 // undraw problem (that is, including boxes of width and/or height 1),
 // but this time, try to generate relatively small scripts.
 //

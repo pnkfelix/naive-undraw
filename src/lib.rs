@@ -6,7 +6,7 @@ extern crate "boxdraw-rs" as boxdraw;
 extern crate log;
 extern crate log;
 
-use boxdraw::{Undraw, Script};
+use boxdraw::{Undraw, Script, Command};
 use boxdraw::grid::Grid;
 
 use std::char::from_u32;
@@ -35,17 +35,15 @@ impl Undraw for SimpleSearch {
 
                     match self.try_upper_left(&grid, unused_char, x, y) {
                         Some(cmd) => {
+                            // Save the command for a box at (x,y),
+                            // and record the effects it will have on
+                            // the board (by clearing the area it
+                            // covers).
                             rev_commands.push(cmd);
-
-                            // Now, clear the matched area.
-                            debug!("clearing matched area ({},{}) of w:{} h:{}",
-                                   x, y, cmd.w, cmd.h);
-                            for i in range(x, x+cmd.w) {
-                                for j in range(y, y+cmd.h) {
-                                    grid.set(i, j, unused_char);
-                                    cleared_some = true;
-                                }
-                            }
+                            self.clear_area_drawn_by_cmd(&mut grid,
+                                                         cmd,
+                                                         unused_char);
+                            cleared_some = true;
                         }
 
                         None => {
@@ -55,10 +53,18 @@ impl Undraw for SimpleSearch {
 
                 }
             }
+
+            // If we managed to clear *any* of the areas, then we
+            // should go back and look to see if we can now find
+            // matches for boxes that were previously obscured by the
+            // boxes that were on top of them.
             if !cleared_some {
                 break;
             }
         }
+
+        // Done accumulating commands; now put them into a proper
+        // script.
         let commands = {
             rev_commands.as_mut_slice().reverse();
             rev_commands
@@ -68,7 +74,7 @@ impl Undraw for SimpleSearch {
             s.add_end_command(cmd);
         }
 
-        s
+        return s;
     }
 }
 
@@ -107,6 +113,20 @@ impl PartialEq for MatchBox {
 }
 
 impl SimpleSearch {
+    fn clear_area_drawn_by_cmd(&self,
+                               grid: &mut Grid,
+                               cmd: Command,
+                               unused_char: char) {
+        let Command { x, y, w, h, fill: _ } = cmd;
+        debug!("clearing matched area ({},{}) of w:{} h:{}",
+               x, y, w, h);
+        for i in range(x, x+w) {
+            for j in range(y, y+h) {
+                grid.set(i, j, unused_char);
+            }
+        }
+    }
+
     fn find_unused_char(&self, picture: &str) -> char {
         static AVOID : [char, ..5] = ['.', '+', '-', '|', '\n'];
         let mut guess = '?' as u32;
@@ -161,10 +181,11 @@ impl SimpleSearch {
                     }
                 }
             }
-            None
-        } else {
-            None
         }
+
+        // if we fell through to here, then we were not able to find a
+        // box at `(x,y)` on this attempt.
+        return None;
     }
 }
 
@@ -177,8 +198,8 @@ struct TryMatchAt<'a> {
 
 impl<'a> TryMatchAt<'a> {
 
-    /// Attempts to match a box at `(self.x, self.y)` extending to `(right, below)`
-    /// using `self.hidden` as a marker for spaces
+    /// Attempts to match a box at `(self.x, self.y)` extending to
+    /// `(right, below)` using `self.hidden` as a marker for spaces
     /// that were overwritten by a later command.
     fn try(&self, right: u32, below: u32) -> MatchBox {
         let x = self.x;
@@ -204,6 +225,21 @@ impl<'a> TryMatchAt<'a> {
         assert!(right < w); assert!(below < h);
         let lower_right = grid.get(right, below);
 
+        fn fail(wanted: &str, loc: (u32,u32), value: char) -> MatchBox {
+            let msg = format!("failed to match {} at {}: {}",
+                              wanted, loc, value);
+            non_match(msg)
+        };
+        let upper_left_fail = || fail("upper_left corner", (x,y), upper_left);
+        let lower_left_fail = || {
+            fail("lower_left corner", (x,below), lower_left)
+        };
+        let upper_right_fail = || {
+            fail("upper_right corner", (right,y), upper_right)
+        };
+        let lower_right_fail = || {
+            fail("lower_right corner", (right,below), lower_right)
+        };
 
         let mut extends_right = false;
         let mut extends_down = false;
@@ -212,14 +248,28 @@ impl<'a> TryMatchAt<'a> {
         // do not necessarily know until scanning deep into the box.
         let mut interior = None;
 
+        // First, check the four corners.
+        //
+        // We want either:
+        //
+        // 1. '+', meaning this is (probably) a real corner, and worth trying to match
+        //
+        // 2. self.hidden, meaning that this could be a corner that
+        //    was hidden by another box above it, and so we can
+        //    speculatively try to match it, or
+        //
+        // 3. a wall ('|' or '-'), meaning that this is not the
+        //    corner, but we might successfully find the corner if we
+        //    keep looking (and thus we should return `PartialMatch`)
+
         if !self.matches_corner(upper_left) {
-            return non_match(format!("failed to match upper_left corner: {}", upper_left));
+            return upper_left_fail();
         }
         if !self.matches_corner(lower_left) {
             if lower_left == '|' {
                 extends_down = true;
             } else {
-                return non_match(format!("failed to match lower_left corner: {}", lower_left));
+                return lower_left_fail();
             }
         }
 
@@ -227,7 +277,7 @@ impl<'a> TryMatchAt<'a> {
             if upper_right == '-' {
                 extends_right = true;
             } else {
-                return non_match(format!("failed to match upper_right corner: {}", upper_right));
+                return upper_right_fail();
             }
         }
 
@@ -241,22 +291,27 @@ impl<'a> TryMatchAt<'a> {
                     interior = Some(lower_right);
                 }
             } else {
-                return non_match(format!("failed to match lower_right corner: {}", lower_right));
+                return lower_right_fail();
             }
         }
 
-        // Check that walls of box are in place.
+        // Second: Okay, at this point we have either seen all four
+        // corners, or we saw walls where we expected corners, and
+        // thus might hope to extend the box.
+        //
+        // Given the above, check that walls of box are in place.
+
         for i in range(x + 1, right) { // across
             assert!(i < w); assert!(y < h);
             let c = grid.get(i, y);
             if !self.matches_horizontal_wall(c) {
-                return non_match(format!("failed to match top horizontal wall at {}: {}", (i, y), c));
+                return fail("top horizontal_wall", (i,y), c);
             }
             assert!(i < w); assert!(below < h);
             let c = grid.get(i, below);
             if !extends_down {
                 if !self.matches_horizontal_wall(c) {
-                    return non_match(format!("failed to match bot horizontal wall at {}: {}", (i, below), c));
+                    return fail("bot horizontal_wall", (i,below), c);
                 }
             } else if c == self.hidden {
                 // keep going
@@ -265,7 +320,7 @@ impl<'a> TryMatchAt<'a> {
                     interior = Some(c);
                 }
                 if interior.is_some() && Some(c) != interior {
-                    return non_match(format!("failed to match bot interior {} at {}: {}", interior, (i, below), c));
+                    return fail("bot interior", (i,below), c);
                 }
             }
         }
@@ -273,13 +328,13 @@ impl<'a> TryMatchAt<'a> {
             assert!(x < w); assert!(j < h);
             let c = grid.get(x, j);
             if !self.matches_vertical_wall(c) {
-                return non_match(format!("failed to match left vertical wall at {}: {}", (x, j), c));
+                return fail("left vertical wall", (x,j), c);
             }
             assert!(right < w); assert!(j < h);
             let c = grid.get(right, j);
             if !extends_right {
                 if !self.matches_vertical_wall(c) {
-                    return non_match(format!("failed to match right vertical wall at {}: {}", (right, j), c));
+                    return fail("right vertical wall", (right,j), c);
                 }
             } else if c == self.hidden {
                 // keep going
@@ -288,12 +343,14 @@ impl<'a> TryMatchAt<'a> {
                     interior = Some(c);
                 }
                 if interior.is_some() && Some(c) != interior {
-                    return non_match(format!("failed to match right interior {} at {}: {}", interior, (right, j), c));
+                    return fail("right interior", (right,j), c);
                 }
             }
         }
 
-        // Check that the interior is sound
+        // Third: We have corners and walls; check that the interior
+        // is sound.
+
         for i in range(x + 1, right) {
             for j in range(y + 1, below) {
                 assert!(i < w); assert!(j < h);
@@ -316,14 +373,14 @@ impl<'a> TryMatchAt<'a> {
                             // going.
                             continue;
                         } else {
-                            return non_match(format!("failed to match interior {} at {}: {}", c1, (i, j), c2));
+                            return fail("interior", (i,j), c2);
                         }
                     }
                 }
             }
         }
 
-        // got this far; return either full or partial box, as
+        // Got this far; return either full or partial box, as
         // appropriate.
 
         if extends_down || extends_right {
